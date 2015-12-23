@@ -45,26 +45,6 @@ class LowPassFilterEstimator(sklearn.base.BaseEstimator):
 
         return self.predicted_.loc[X]
 
-    def score(self, X, y):
-        pass
-        
-    # def predict_single(self, x_val):
-    #     if x_val < 0:
-    #         return self.resampled_smooth.iloc[0]
-    #     elif x_val > len(self.resampled_smooth)-1:
-    #         return self.resampled_smooth.iloc[len(self.resampled_smooth)-1]
-    #     else:
-    #         prev=self.resampled_smooth[self.resampled_smooth.index<=x_val].tail(1)
-    #         next=self.resampled_smooth[self.resampled_smooth.index>=x_val].head(1)
-    #         prev_x=prev.index[0]
-    #         prev_y=prev.iloc[0]
-    #         next_x=next.index[0]
-    #         next_y=next.iloc[0]
-    #         return prev_y+(x_val-prev_x)*(next_y-prev_y)/(next_x-prev_x)
-                           
-#     def score(self, X):
-#         pass
-        
     def get_params(self, deep=True):
         return {'filter_width': self.filter_width}
     
@@ -106,21 +86,19 @@ def run(infile=None, outfile=None, cv_folds=10, basin_iters=100, sep=',', header
     # make sure all is float - avoid integer arithmetic in scipy.filters.uniform_filter1d (e.g., (1+2)/2=1)
     d_in=d_in.astype(float)
 
-    # print(d_in)
-    # print(len(d_in))
-
     kf = sklearn.cross_validation.KFold(len(d_in), n_folds=cv_folds, shuffle=False)
 
     d_out=pd.DataFrame()
 
     min_filters=[]
-    num_increase=0
     for col in d_in:
         vector_in=d_in[col]
 
+        num_increase=0
         min_filter=1
         min_score=float('inf')
-        for filt_width in range(1, int(2*len(vector_in)*(1.0-1.0/cv_folds))-1, 2):
+        max_iterations=int(2*len(vector_in)*(1.0-1.0/cv_folds))-1 # Max filter width is 2n-1, where N is length of vector
+        for filt_width in range(1, max_iterations, 2):
             score=iteration(vector_in, filt_width, kf)
             if score<=min_score:
                 min_score=score
@@ -128,43 +106,13 @@ def run(infile=None, outfile=None, cv_folds=10, basin_iters=100, sep=',', header
             else:
                 num_increase+=1
             # print(filt_width, score)
+
+            # ultra-simple way of detecting minimum -> could use a better search procedure in general
             if num_increase>=3:
               break
 
         d_out[col]=LowPassFilterEstimator.apply_filter(vector_in, min_filter)
 
     d_out.to_csv(outfile, sep=sep, header=header, index=False)
-
-    # print(min_filter)
-    # print(min_score)
-
-# def run_min(infile=None, cv_folds=10, basin_iters=100, sep=',', header=None):
-#     '''
-#     Cross-validated, approximately gaussian smoothing of equidistant time-series data
-
-#     Input is assumend to be a plain-text representation of a matrix with N rows and M columns. 
-#     Each row represents an (equidistant) timepoint, while each column represents a different time-series dataset.
-#     Input can be provided through stdin or filename via command-line argument (--infile).
-#     Input is assumed to be without a header (--header).
-#     Input column separator is ',' (--sep).
-#     Input can optionally be gzipped (compression is inferred automatically).
-#     '''
-#     # if no infile is provided, assume stdin
-#     if(infile is None):
-#         infile=sys.stdin
-#     # read input, use default separator, don't user header, and infer compression
-#     d_in=pd.read_csv(infile, sep=sep, header=header, compression='infer')
-
-#     # make sure all is float - avoid integer arithmetic in scipy.filters.uniform_filter1d (e.g., (1+2)/2=1)
-#     d_in=d_in.astype(float)
-
-#     kf = sklearn.cross_validation.KFold(len(d_in), n_folds=cv_folds, shuffle=False)
-
-#     for col in d_in:
-#         vector_in=d_in[col]
-
-#         result=scipy.optimize.minimize(lambda x: iteration(vector_in, int(x), kf), x0=[1], bounds=[(1,int(2*len(vector_in)*(1.0-1.0/cv_folds))-1)])
-#         print(result)
-
 
 cl.commander_line(run, print_argv_to_output=False, print_done=False) if __name__ == '__main__' else None
